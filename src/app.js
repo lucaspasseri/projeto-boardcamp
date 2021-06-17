@@ -38,20 +38,57 @@ const games = [
 
 app.post("/games", async (req, res) => {
     const { name, image, stockTotal, categoryId, pricePerDay } = req.body;
-    console.log(name, image, stockTotal, categoryId, pricePerDay);
+
     try {
-        await connection.query('INSERT INTO games ( name, image, "stockTotal", "categoryId", "pricePerDay") VALUES ( $1, $2, $3, $4, $5)',[name, image, stockTotal, categoryId, pricePerDay]);
-        res.sendStatus(201);
+        const registredCategoryIds = await connection.query('SELECT id FROM categories');
+        const existingCategoryId = registredCategoryIds.rows.find(category => category.id ===categoryId);
+
+        const nameAlreadyRegistred = await connection.query('SELECT name FROM games WHERE name = $1',[name]);
+
+        const validName = (name.trim().length > 0);
+        const validStockTotal = (stockTotal > 0);
+        const validPricePerDay = (pricePerDay > 0);
+
+        if(!existingCategoryId || !validName || !validStockTotal || !validPricePerDay){ 
+            res.sendStatus(400);
+
+        } else {
+            if(nameAlreadyRegistred.rows.length > 0){
+                res.sendStatus(409);
+
+            } else {
+                await connection.query(
+                    'INSERT INTO games ( name, image, "stockTotal", "categoryId", "pricePerDay") VALUES ( $1, $2, $3, $4, $5)',
+                    [name, image, stockTotal, categoryId, pricePerDay]
+                );
+                res.sendStatus(201);
+
+            }
+        }
     } catch {
         res.sendStatus(500);
+
     }
 })
 
 
 app.get("/games", async (req, res) => {
     try {
-        const games = await connection.query("SELECT * FROM games");
-        res.send(games.rows);
+        const games = await connection.query('SELECT * FROM games');
+
+        const categories = await connection.query('SELECT * FROM categories');
+
+        const showingGames = games.rows.map(game => {
+            for(let i = 0; i < categories.rows.length; i++){
+                if(categories.rows[i].id === game.categoryId){
+                    game.categoryName = categories.rows[i].name;
+
+                }
+            }
+            return game;
+        });
+
+        res.send(showingGames);
     } catch {
         res.sendStatus(500);
     }
@@ -74,8 +111,8 @@ app.get("/categories", async (req, res) => {
 app.post("/categories", async (req, res) => {
     const { name }= req.body;
     try {
-        const blankName = (name.trim().length === 0)
-        if(blankName) {
+        const validName = (name.trim().length > 0)
+        if(!validName) {
             res.sendStatus(400);
 
         } else {
