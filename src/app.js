@@ -17,25 +17,6 @@ const connection = new Pool({
     database: 'boardcamp'
 });
 
-const games = [
-    {
-        id: 1,
-        name: 'Banco Imobiliário',
-        image: 'http://',
-        stockTotal: 3,
-        categoryId: 1,
-        pricePerDay: 1500
-    },
-    {
-        id: 2,
-        name: 'Jogo da vida',
-        image: 'http://',
-        stockTotal: 2,
-        categoryId: 1,
-        pricePerDay: 1500,
-    }
-];
-
 app.post("/games", async (req, res) => {
     const { name, image, stockTotal, categoryId, pricePerDay } = req.body;
 
@@ -72,24 +53,31 @@ app.post("/games", async (req, res) => {
 })
 
 
-app.get("/games", async (req, res) => {
+app.get("/games", async (req, res) => {    
     try {
-        const games = await connection.query('SELECT * FROM games');
+        const queryName = req.query.name;    
 
-        const categories = await connection.query('SELECT * FROM categories');
+        if(!queryName){
+            const games = await connection.query(
+                `SELECT games.*, categories.name AS "categoryName"
+                FROM games JOIN categories
+                ON games."categoryId" = categories.id
+            `);
+            res.send(games.rows);
 
-        const showingGames = games.rows.map(game => {
-            for(let i = 0; i < categories.rows.length; i++){
-                if(categories.rows[i].id === game.categoryId){
-                    game.categoryName = categories.rows[i].name;
+        } else {
+            const games = await connection.query(
+                `SELECT games.*, categories.name AS "categoryName"
+                FROM games JOIN categories
+                ON games."categoryId" = categories.id
+                WHERE games.name LIKE $1`, [`${queryName+'%'}`]
+            );
+            res.send(games.rows);
 
-                }
-            }
-            return game;
-        });
+        }
 
-        res.send(showingGames);
-    } catch {
+    } catch(e) {    
+        console.log(e);
         res.sendStatus(500);
     }
 })
