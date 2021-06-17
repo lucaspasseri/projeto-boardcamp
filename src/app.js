@@ -17,20 +17,73 @@ const connection = new Pool({
     database: 'boardcamp'
 });
 
+app.post("/customers", async (req, res) => {
+    try{
+        const {name, phone, cpf, birthday} = req.body;
+        const newCustomer = await connection.query(`INSERT INTO customers
+            (name, phone, cpf, birthday) VALUES ($1, $2, $3, $4)`, [name, phone, cpf, birthday]);
+            res.sendStatus(201);
+    } catch(e) {
+        console.log(e);
+        res.sendStatus(500);
+    }
+});
+
+app.get("/customers/:id", async (req, res) => {    
+    try {
+        const customerId = req.params;    
+
+        const customer = await connection.query(
+                `SELECT * FROM customers
+                WHERE id = $1`, [customerId.id]
+        );
+        if(customer.rows.length === 0){
+            res.sendStatus(404);
+        } else {
+            res.send(customer.rows[0]);
+        }
+        
+    } catch(e) {    
+        console.log(e);
+        res.sendStatus(500);
+    }
+});
+
+app.get("/customers", async (req, res) => {    
+    try {
+        const queryCPF = req.query.cpf; 
+
+        if(!queryCPF){
+            const customers = await connection.query(`SELECT * FROM customers`);
+            res.send(customers.rows);
+
+        } else {
+            const customers = await connection.query(
+                `SELECT * FROM customers
+                WHERE customers.cpf LIKE $1`, [`${queryCPF+'%'}`]
+            );
+            res.send(customers.rows);
+        }
+
+    } catch(e) {    
+        console.log(e);
+        res.sendStatus(500);
+    }
+});
+
 app.post("/games", async (req, res) => {
     const { name, image, stockTotal, categoryId, pricePerDay } = req.body;
 
     try {
-        const registredCategoryIds = await connection.query('SELECT id FROM categories');
-        const existingCategoryId = registredCategoryIds.rows.find(category => category.id ===categoryId);
-
+        
+        const existingCategoryId = await connection.query('SELECT id FROM categories WHERE id = $1',[categoryId]);
         const nameAlreadyRegistred = await connection.query('SELECT name FROM games WHERE name = $1',[name]);
 
         const validName = (name.trim().length > 0);
         const validStockTotal = (stockTotal > 0);
         const validPricePerDay = (pricePerDay > 0);
 
-        if(!existingCategoryId || !validName || !validStockTotal || !validPricePerDay){ 
+        if(existingCategoryId.rows.length === 0 || !validName || !validStockTotal || !validPricePerDay){ 
             res.sendStatus(400);
 
         } else {
@@ -50,8 +103,7 @@ app.post("/games", async (req, res) => {
         res.sendStatus(500);
 
     }
-})
-
+});
 
 app.get("/games", async (req, res) => {    
     try {
@@ -80,11 +132,11 @@ app.get("/games", async (req, res) => {
         console.log(e);
         res.sendStatus(500);
     }
-})
+});
 
 app.get("/", (req, res) => {
     res.send("Ok!");
-})
+});
 
 app.get("/categories", async (req, res) => {
 
@@ -94,7 +146,7 @@ app.get("/categories", async (req, res) => {
     } catch {
         res.sendStatus(500);
     }
-})
+});
 
 app.post("/categories", async (req, res) => {
     const { name }= req.body;
@@ -120,7 +172,7 @@ app.post("/categories", async (req, res) => {
     } catch {
         res.sendStatus(500);
     }
-})
+});
 
 app.listen(4000, () =>{
     console.log("Running on port 4000...");
