@@ -6,6 +6,8 @@ import dayjs from 'dayjs';
 import formatParser from 'dayjs/plugin/customParseFormat.js';
 dayjs.extend(formatParser); 
 
+pg.types.setTypeParser(1082, (str) => str);
+
 const app = express();
 
 app.use(cors());
@@ -19,6 +21,140 @@ const connection = new Pool({
     host: 'localhost',
     port: 5432,
     database: 'boardcamp'
+});
+
+app.post("/rentals", async (req, res) => {
+    try {
+        const {customerId, gameId, daysRented } = req.body;
+
+        Joi.attempt(daysRented, Joi.number().integer().min(1).required());
+
+        const validCustomer = await connection.query(`SELECT * FROM customers WHERE id = $1`, [customerId]);
+
+        if(validCustomer.rows.length === 0){
+            res.sendStatus(400);
+            return;
+        }
+
+        const validGame = await connection.query(`SELECT * FROM games WHERE id = $1`, [gameId]);
+
+        if(validGame.rows.length === 0){
+            res.sendStatus(400);
+            return;
+        }
+
+        const rentalsPerGameId = await connection.query(
+            `SELECT games.*, rentals.* 
+            FROM games JOIN rentals
+            ON games.id = rentals."gameId"
+            WHERE rentals."gameId" = $1
+            `, [gameId]
+        );
+
+        if(rentalsPerGameId.rows.length >= validGame.rows[0].stockTotal){
+            res.sendStatus(400);
+            return;
+        }
+
+        await connection.query(
+            `INSERT INTO rentals 
+            ("customerId", "gameId", "rentDate", "daysRented", "originalPrice")
+            VALUES ($1, $2, $3, $4, $5)`,
+            [customerId, gameId, dayjs().format("YYYY-MM-DD"), daysRented, daysRented*validGame.rows[0].pricePerDay]
+        );
+        res.sendStatus(201);
+    } catch {
+        res.sendStatus(500);
+    }
+});
+
+app.get("/rentals", async (req, res) => {
+    try {
+        const query = req.query;
+
+        let rentalsCustomersGamesAndCategories;
+
+        if(!query.customerId && !query.gameId){
+            rentalsCustomersGamesAndCategories = await connection.query(
+                `SELECT rentals.*,
+                customers.phone, customers.cpf, customers.birthday, customers.name AS "customerName",
+                games.image, games."stockTotal", games."categoryId", games."pricePerDay", games.name AS "gameName",
+                categories.name AS "categoryName"  
+                FROM rentals 
+                JOIN customers ON rentals."customerId" = customers.id
+                JOIN games ON rentals."gameId" = games.id
+                JOIN categories ON games."categoryId" = categories.id`
+            );
+        }
+        else if(!query.customerId){
+            rentalsCustomersGamesAndCategories = await connection.query(
+                `SELECT rentals.*,
+                customers.phone, customers.cpf, customers.birthday, customers.name AS "customerName",
+                games.image, games."stockTotal", games."categoryId", games."pricePerDay", games.name AS "gameName",
+                categories.name AS "categoryName"  
+                FROM rentals 
+                JOIN customers ON rentals."customerId" = customers.id
+                JOIN games ON rentals."gameId" = games.id
+                JOIN categories ON games."categoryId" = categories.id
+                WHERE rentals."gameId" = $1`, [query.gameId]
+            );
+        }
+        else if(!query.gameId){
+            rentalsCustomersGamesAndCategories = await connection.query(
+                `SELECT rentals.*,
+                customers.phone, customers.cpf, customers.birthday, customers.name AS "customerName",
+                games.image, games."stockTotal", games."categoryId", games."pricePerDay", games.name AS "gameName",
+                categories.name AS "categoryName"  
+                FROM rentals 
+                JOIN customers ON rentals."customerId" = customers.id
+                JOIN games ON rentals."gameId" = games.id
+                JOIN categories ON games."categoryId" = categories.id
+                WHERE rentals."customerId" = $1`, [query.customerId]
+            );
+        }
+        else {
+            console.log("aqui");
+            rentalsCustomersGamesAndCategories = await connection.query(
+                `SELECT rentals.*,
+                customers.phone, customers.cpf, customers.birthday, customers.name AS "customerName",
+                games.image, games."stockTotal", games."categoryId", games."pricePerDay", games.name AS "gameName",
+                categories.name AS "categoryName"  
+                FROM rentals 
+                JOIN customers ON rentals."customerId" = customers.id
+                JOIN games ON rentals."gameId" = games.id
+                JOIN categories ON games."categoryId" = categories.id
+                WHERE rentals."customerId" = $1
+                AND rentals."gameId" = $2`, [query.customerId, query.gameId]
+            );
+        }
+        
+
+        const output = rentalsCustomersGamesAndCategories.rows.map(item =>{
+            return {
+                id: item.id,
+                customerId: item.customerId,
+                gameId: item.gameId,
+                rentDate: item.rentDate,
+                daysRented: item.daysRented,
+                returnDate: item.returnDate,
+                originalPrice: item.originalPrice,
+                delayFee: item.delayFee,
+                customer: {
+                    id: item.customerId,
+                    name: item.customerName
+                },
+                game: {
+                    id: item.gameId,
+                    name: item.gameName,
+                    categoryId: item.categoryId,
+                    categoryName: item.categoryName
+                }
+            };
+        });
+        res.send(output);
+    } catch {
+        res.sendStatus(500);
+    }
 });
 
 app.put("/customers/:id", async (req, res) => {
@@ -265,6 +401,4 @@ app.post("/categories", async (req, res) => {
     }
 });
 
-app.listen(4000, () =>{
-    console.log("Running on port 4000...");
-});
+app.listen(4000);
